@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>地址整理工具</title>
+<style>
+:root{--bg:#f6f5f1;--surface:#fff;--ink:#1d2428;--muted:#66717a;--line:#d9dcd8;--accent:#1b6b5f;--accent-ink:#fff;--warn:#8a5a00;--warn-bg:#fff3d6;--chip:#e6efec;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#14191b;--surface:#1c2326;--ink:#e8ecea;--muted:#9aa6ab;--line:#2f393d;--accent:#5bbfaa;--accent-ink:#08201b;--warn:#f0c46a;--warn-bg:#3a2f12;--chip:#22362f;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#14191b;--surface:#1c2326;--ink:#e8ecea;--muted:#9aa6ab;--line:#2f393d;--accent:#5bbfaa;--accent-ink:#08201b;--warn:#f0c46a;--warn-bg:#3a2f12;--chip:#22362f;color-scheme:dark}
+*{box-sizing:border-box}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 "Noto Sans TC","PingFang TC","Microsoft JhengHei",system-ui,sans-serif}
+main{max-width:720px;margin:0 auto;padding:20px 16px 48px}
+h1{font-size:1.5rem;margin:8px 0 4px;letter-spacing:.02em}
+.sub{color:var(--muted);margin:0 0 18px;font-size:.95rem}
+textarea{width:100%;min-height:130px;padding:12px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink);font:inherit;resize:vertical}
+textarea:focus,button:focus-visible,a:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.bar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:12px 0 20px}
+label{display:flex;gap:8px;align-items:center;color:var(--muted);font-size:.95rem}
+button,.btn{font:inherit;border:1px solid var(--line);background:var(--surface);color:var(--ink);padding:8px 14px;border-radius:8px;cursor:pointer;text-decoration:none;display:inline-block}
+.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:600}
+.spacer{flex:1}
+.item{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:14px;margin-bottom:12px}
+.orig{color:var(--muted);font-size:.88rem;word-break:break-all}
+.clean{font-size:1.1rem;font-weight:600;margin:4px 0 8px;word-break:break-all}
+.tags{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+.tag{background:var(--chip);border-radius:6px;padding:1px 8px;font-size:.85rem}
+.warn{background:var(--warn-bg);color:var(--warn)}
+.acts{display:flex;gap:8px;flex-wrap:wrap}
+.alts{margin-top:12px;border-top:1px solid var(--line);padding-top:10px}
+.alt{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px}
+.alttx{flex:1 1 220px;word-break:break-all;font-size:.95rem}
+.alt button,.alt .btn{padding:4px 10px;font-size:.9rem}
+.empty{color:var(--muted);padding:16px 0}
+.foot{color:var(--muted);font-size:.85rem;margin-top:24px}
+</style>
+</head>
+<body>
+<main>
+<h1>地址整理工具</h1>
+<p class="sub">貼上客戶地址（一行一筆），自動整理成 Google 地圖認得的寫法。資料只在你的瀏覽器處理，不會上傳。</p>
+<textarea id="in" placeholder="例如：&#10;桃園市桃園區光興里 5 鄰縣府路1號3樓&#10;新北市板橋區福丘里中山路一段 161 號" aria-label="地址輸入"></textarea>
+<div class="bar">
+<label><input type="checkbox" id="floor"> 去掉樓層（只留到「號」）</label>
+<span class="spacer"></span>
+<button id="copyAll" class="primary">複製全部整理後地址</button>
+<button id="copyUrls">複製全部導航網址</button>
+<button id="copyXls">複製全部 Excel 導航公式</button>
+<button id="clear">清除</button>
+</div>
+<div id="out"><div class="empty">貼上地址後，結果會顯示在這裡。</div></div>
+<p class="foot">整理規則：移除「里、鄰」、全形轉半形、路名「9段」改「九段」、門牌「之」改「-」，並提供備用寫法。貼到 Excel 時，先點選第一個儲存格再貼上，每筆會各佔一列。原始地址不會被修改，結果請以實際導航位置為準。</p>
+</main>
+<script>
+var CN="零一二三四五六七八九";
+function numCN(n){if(n<10)return CN[n];if(n<20)return "十"+(n%10?CN[n%10]:"");return CN[Math.floor(n/10)]+"十"+(n%10?CN[n%10]:"");}
+function convert(raw,dropFloor){
+  var notes=[],warn=[];
+  var s=raw.replace(/[\uFF01-\uFF5E]/g,function(c){return String.fromCharCode(c.charCodeAt(0)-0xFEE0)}).replace(/\u3000/g," ").replace(/\s+/g,"");
+  if(!s)return null;
+  var m=s.match(/^(.{2,3}[縣市])(.{1,3}?[區鄉鎮市])(.*)$/);
+  var head="",rest=s;
+  if(m){head=m[1]+m[2];rest=m[3];}else{warn.push("找不到縣市與區，請確認地址是否完整");}
+  var r1=rest.match(/^(?:[^\d路街道巷弄號]{1,4}?[里村])?[\d一二三四五六七八九十]+鄰/);
+  if(r1){notes.push("移除 "+r1[0]);rest=rest.slice(r1[0].length);}
+  else{
+    var r2=rest.match(/^[^\d路街道巷弄號]{1,4}?[里村]/);
+    if(r2){var after=rest.slice(r2[0].length);
+      if(/[路街道]/.test(after)&&!/^[路街道]/.test(after)){notes.push("移除 "+r2[0]);rest=after;}}
+  }
+  var out=head+rest;
+  out=out.replace(/([路街道])(\d{1,2})段/g,function(a,b,n){var v=numCN(parseInt(n,10));notes.push(n+"段→"+v+"段");return b+v+"段";});
+  if(dropFloor){var f=out.match(/(\d+(?:之\d+)?號(?:之\d+)?)(?!之\d)(.+)$/);if(f){notes.push("移除 "+f[2]);out=out.slice(0,out.length-f[2].length);}}
+  if(!/\d+(?:之\d+)?號/.test(out))warn.push("沒有看到門牌號碼，定位可能只到路段");
+  var variants=[],clean=out;
+  if(/\d+號之\d+/.test(out)){
+    clean=out.replace(/(\d+)號之(\d+)/,"$1-$2號");notes.push("之→-");
+    variants.push({label:"保留「之」",text:out});
+    variants.push({label:"去掉「之」",text:out.replace(/號之\d+/,"號")});
+  }
+  if(/之\d+號/.test(out)){
+    clean=out.replace(/之(\d+號)/,"-$1");notes.push("之→-");
+    variants.push({label:"保留「之」",text:out});
+    variants.push({label:"去掉「之」",text:out.replace(/之\d+號/,"號")});
+  }
+  var road=out.match(/^.*?[路街道](?:[一二三四五六七八九十]+段)?(?:\d+巷)?/);
+  if(road&&road[0]!==out&&road[0].length>head.length)variants.push({label:"只到"+(/巷$/.test(road[0])?"巷口":"路段"),text:road[0]});
+  return {clean:clean,notes:notes,warn:warn,variants:variants};
+}
+function navUrl(a){return "https://www.google.com/maps/dir/?api=1&destination="+encodeURIComponent(a);}
+function copy(text,btn){
+  var done=function(){var t=btn.textContent;btn.textContent="已複製";setTimeout(function(){btn.textContent=t},1200);};
+  try{navigator.clipboard.writeText(text).then(done,fallback);}catch(e){fallback();}
+  function fallback(){var ta=document.createElement("textarea");ta.value=text;document.body.appendChild(ta);ta.select();try{document.execCommand("copy");done();}catch(e){}document.body.removeChild(ta);}
+}
+var results=[];
+function render(){
+  var lines=document.getElementById("in").value.split(/\n/);
+  var drop=document.getElementById("floor").checked;
+  var out=document.getElementById("out");
+  results=[];out.innerHTML="";
+  lines.forEach(function(l){var r=convert(l,drop);if(r){r.orig=l.trim();results.push(r);}});
+  if(!results.length){out.innerHTML='<div class="empty">貼上地址後，結果會顯示在這裡。</div>';return;}
+  results.forEach(function(r){
+    var d=document.createElement("div");d.className="item";
+    var o=document.createElement("div");o.className="orig";o.textContent="原始："+r.orig;
+    var c=document.createElement("div");c.className="clean";c.textContent=r.clean;
+    var t=document.createElement("div");t.className="tags";
+    r.notes.forEach(function(n){var s=document.createElement("span");s.className="tag";s.textContent=n;t.appendChild(s);});
+    r.warn.forEach(function(n){var s=document.createElement("span");s.className="tag warn";s.textContent=n;t.appendChild(s);});
+    var a=document.createElement("div");a.className="acts";
+    var b=document.createElement("button");b.textContent="複製地址";b.onclick=function(){copy(r.clean,b)};
+    var g=document.createElement("a");g.className="btn primary";g.textContent="Google 導航";g.href=navUrl(r.clean);g.target="_blank";g.rel="noopener";
+    a.appendChild(b);a.appendChild(g);
+    d.appendChild(o);d.appendChild(c);if(t.childNodes.length)d.appendChild(t);d.appendChild(a);
+    if(r.variants.length){
+      var al=document.createElement("div");al.className="alts";
+      var h=document.createElement("div");h.className="orig";h.textContent="找不到時，改試這些寫法：";al.appendChild(h);
+      r.variants.forEach(function(v){
+        var row=document.createElement("div");row.className="alt";
+        var tx=document.createElement("span");tx.className="alttx";tx.textContent=v.label+"："+v.text;
+        var cb=document.createElement("button");cb.textContent="複製";cb.onclick=function(){copy(v.text,cb)};
+        var ng=document.createElement("a");ng.className="btn";ng.textContent="導航";ng.href=navUrl(v.text);ng.target="_blank";ng.rel="noopener";
+        row.appendChild(tx);row.appendChild(cb);row.appendChild(ng);al.appendChild(row);
+      });
+      d.appendChild(al);
+    }
+    out.appendChild(d);
+  });
+}
+document.getElementById("in").addEventListener("input",render);
+document.getElementById("floor").addEventListener("change",render);
+document.getElementById("clear").onclick=function(){document.getElementById("in").value="";render();};
+document.getElementById("copyAll").onclick=function(){copy(results.map(function(r){return r.clean}).join("\n"),this);};
+document.getElementById("copyUrls").onclick=function(){copy(results.map(function(r){return "https://www.google.com/maps/dir/?api=1&destination="+encodeURIComponent(r.clean)}).join("\n"),this);};
+document.getElementById("copyXls").onclick=function(){copy(results.map(function(r){return '=HYPERLINK("https://maps.google.com/?daddr='+encodeURIComponent(r.clean)+'","導航")'}).join("\n"),this);};
+</script>
+</body>
+</html>
